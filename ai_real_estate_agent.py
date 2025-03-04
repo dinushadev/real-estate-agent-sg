@@ -17,6 +17,7 @@ class PropertyData(BaseModel):
     location_address: str = Field(description="Complete address of the property")
     price: str = Field(description="Price of the property", alias="Price")
     description: str = Field(description="Detailed description of the property", alias="Description")
+    link: str = Field(description="Link to the property listing", alias="Link")
 
 class PropertiesResponse(BaseModel):
     """Schema for multiple properties response"""
@@ -104,18 +105,17 @@ class PropertyFindingAgent:
             "Landed": "Landed Houses"
         }.get(property_type, "HDB Flats")
         
-        prompt = f"""Extract ONLY 10 OR LESS different {property_category} {property_type_prompt} from {city} that cost less than {max_price} SGD.
+        prompt = f"""Extract ONLY 10 OR LESS different {property_category} {property_type} from {city} that cost less than {max_price} SGD.
         
         Requirements:
         - Property Category: {property_category} properties only
-        - Property Type: {property_type_prompt} only
+        - Property Type: {property_type} only
         - Location: {city}
         - Maximum Price: {max_price} SGD
         - Include complete property details with exact location
         - IMPORTANT: Return data for at least 3 different properties. MAXIMUM 10.
         - Format as a list of properties with their respective details
         - IMPORTANT: include the hyperlink to the each property in the resulted data
-        - IMPORTANT: extract the image link of each property
         """
         
         if min_size:
@@ -132,6 +132,8 @@ class PropertyFindingAgent:
                 'schema': PropertiesResponse.model_json_schema()
             }
         )
+
+        print(f" prompt: {prompt}")
         
         print("Raw Property Response:", raw_response)
         
@@ -154,22 +156,22 @@ class PropertyFindingAgent:
 
                 **IMPORTANT INSTRUCTIONS:**
                 1. ONLY analyze properties from the above JSON data that match the user's requirements:
-                - Property Category: {property_category}
-                - Property Type: {property_type}
-                - Maximum Price: {max_price} SGD
+                    - Property Category: {property_category}
+                    - Property Type: {property_type}
+                    - Maximum Price: {max_price} SGD
                 2. DO NOT create new categories or property types
                 3. From the matching properties, select 5-6 properties with prices closest to {max_price} SGD
 
                 Please provide your analysis in this format:
                 
                 🏠 SELECTED PROPERTIES
-                • List with number only 5-6 best matching properties with prices closest to {max_price} SGD
-                • For each property include:
+                - List with number only 5-6 best matching properties with prices closest to {max_price} SGD
+                - For each property include:
                 - Name and Location
                 - Price (with value analysis)
                 - Key Features
                 - Pros and Cons
-                - hyperlink to the property listing
+                - hyperlink to the property listing. hide the url.  do not add fake links if link not available. keep it empty.
 
                 💰 BEST VALUE ANALYSIS
                 • Compare the selected properties based on:
