@@ -1,7 +1,7 @@
 from typing import Dict, List
 from pydantic import BaseModel, Field
 from agno.agent import Agent
-from agno.models.openai import OpenAIChat
+from agno.models.google import Gemini
 from firecrawl import FirecrawlApp
 import streamlit as st
 import os
@@ -44,7 +44,7 @@ class PropertyFindingAgent:
     
     def __init__(self, firecrawl_api_key: str, openai_api_key: str, model_id: str = "gpt-3.5-turbo"):
         self.agent = Agent(
-            model=OpenAIChat(id=model_id, api_key=openai_api_key),
+            model=Gemini(id=model_id, api_key=openai_api_key),
             markdown=True,
             description="I am a real estate expert who helps find and analyze properties based on user preferences."
         )
@@ -76,8 +76,21 @@ class PropertyFindingAgent:
         pro_type = property_map[property_category]
         if isinstance(pro_type, dict):
             pro_type = pro_type.get(property_type, "H")
+
+        if min_size is None:
+            min_size_param = ''
+        else:
+            min_size_param = min_size
+        if max_size is None:
+            max_size_param = ''
+        else:
+            max_size_param = max_size
+        if bedrooms is None:
+            bedrooms_param = ''
+        else:
+            bedrooms_param = bedrooms
         urls = [
-            f"https://www.propertyguru.com.sg/property-for-sale?listingType=sale&page=1&isCommercial=false&maxPrice={max_price}&hdbEstate=1&_freetextDisplay={formatted_location}&bedrooms={bedrooms}&minSize={min_size}&maxSize={max_size}&propertyTypeGroup={pro_type}"
+            f"https://www.propertyguru.com.sg/property-for-sale?listingType=sale&page=1&isCommercial=false&maxPrice={max_price}&freetext={formatted_location}&bedrooms={bedrooms_param}&minSize={min_size_param}&maxSize={max_size_param}&propertyTypeGroup={pro_type}"
           #  f" https://www.propertyguru.com.sg/property-for-sale?listingType=sale&page=1&isCommercial=true&_freetextDisplay={formatted_location}&priceMax={max_price * 10000000}",
            # f"https://www.99.co/singapore/sale",
            # f"https://housing.com/in/buy/{formatted_location}/{formatted_location}",
@@ -100,6 +113,8 @@ class PropertyFindingAgent:
         - Include complete property details with exact location
         - IMPORTANT: Return data for at least 3 different properties. MAXIMUM 10.
         - Format as a list of properties with their respective details
+        - include the hyperlink to the each property in the resulted data
+        - extract the image link of each property
         """
         
         if min_size:
@@ -150,6 +165,7 @@ class PropertyFindingAgent:
               - Price (with value analysis)
               - Key Features
               - Pros and Cons
+              - hyperlink to the property listing
 
             💰 BEST VALUE ANALYSIS
             • Compare the selected properties based on:
@@ -181,55 +197,59 @@ def main():
         layout="wide"
     )
 
-    with st.sidebar:
-        st.title("🔑 API Configuration")
-        
-        st.subheader("🤖 Model Selection")
-        model_id = st.selectbox(
-            "Choose OpenAI Model",
-            options=["gpt-3.5-turbo", "gpt-4o"],
-            help="Select the AI model to use. Choose gpt-4o if your api doesn't have access to o3-mini"
-        )
-        st.session_state.model_id = model_id
-    
-        
-        # Try to get keys from environment first
-        firecrawl_key = os.environ.get('FIRECRAWL_API_KEY')
-        openai_key = os.environ.get('OPENAI_API_KEY')
+    # Try to get keys from environment first
+    firecrawl_key = os.environ.get('FIRECRAWL_API_KEY')
+    openai_key =  os.environ.get('GOOGLE_API_KEY') #'AIzaSyBFJikVub5H_v7zZdQ-SRCjw1dRcIAYHmw' # os.environ.get('GEMINI_API_KEY')
+    st.session_state.model_id = 'gemini-2.0-pro-exp-02-05'
 
-        if not firecrawl_key or not openai_key: 
+    if not firecrawl_key or not openai_key:
+        with st.sidebar:
+            st.title("🔑 API Configuration")
+            
+            st.subheader("🤖 Model Selection")
+            model_id = st.selectbox(
+                "Choose OpenAI Model",
+                options=["gpt-3.5-turbo", "gpt-4o"],
+                help="Select the AI model to use. Choose gpt-4o if your api doesn't have access to o3-mini"
+            )
+            st.session_state.model_id = model_id
+        
+            
+
+
+            
             st.divider()
             st.subheader("🔐 API Keys")
+            
+            # Only show inputs if keys are not in environment
+            if not firecrawl_key:
+                firecrawl_key = st.text_input(
+                "Firecrawl API Key",
+                type="password",
+                help="Enter your Firecrawl API key"
+                )
+            
+            if not openai_key:
+                openai_key = st.text_input(
+                "OpenAI API Key", 
+                type="password",
+                help="Enter your OpenAI API key"
+                )
         
-        # Only show inputs if keys are not in environment
-        if not firecrawl_key:
-            firecrawl_key = st.text_input(
-            "Firecrawl API Key",
-            type="password",
-            help="Enter your Firecrawl API key"
-            )
-        
-        if not openai_key:
-            openai_key = st.text_input(
-            "OpenAI API Key", 
-            type="password",
-            help="Enter your OpenAI API key"
-            )
-        
-        if firecrawl_key and openai_key:
-            st.session_state.firecrawl_key = firecrawl_key
-            st.session_state.openai_key = openai_key
-            st.session_state.property_agent = PropertyFindingAgent(
-                firecrawl_api_key=firecrawl_key,
-                openai_api_key=openai_key,
-                model_id=st.session_state.model_id
-            )
+    if firecrawl_key and openai_key:
+        st.session_state.firecrawl_key = firecrawl_key
+        st.session_state.openai_key = openai_key
+        st.session_state.property_agent = PropertyFindingAgent(
+            firecrawl_api_key=firecrawl_key,
+            openai_api_key=openai_key,
+            model_id=st.session_state.model_id
+        )
 
     st.title("🏠AI Real Estate Agent for Singapore 🇸🇬 property market")
     st.info(
         """
-        Welcome to the AI Real Estate Agent! 
-        Enter your search criteria below to get property recommendations 
+        Stop wasting time browsing web. Use smart AI agent to find your matching property instance!
+        Quick and easy way to find properties in Singapore 🇸🇬 based on your preferences. 
         and location insights.
         """
     )
