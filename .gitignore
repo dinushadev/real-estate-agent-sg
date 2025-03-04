@@ -1,0 +1,7 @@
+
+**/qdrant_storage/**
+**/local_rag_agent/**
+
+.vscode/
+.idea/
+.venv/
