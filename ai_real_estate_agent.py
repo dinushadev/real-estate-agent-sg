@@ -4,6 +4,7 @@ from agno.agent import Agent
 from agno.models.google import Gemini
 from firecrawl import FirecrawlApp
 import streamlit as st
+from urllib.parse import quote
 import os
 
 open_api_key = os.environ.get('OPENAI_API_KEY')
@@ -90,7 +91,7 @@ class PropertyFindingAgent:
         else:
             bedrooms_param = bedrooms
         urls = [
-            f"https://www.propertyguru.com.sg/property-for-sale?listingType=sale&page=1&isCommercial=false&maxPrice={max_price}&freetext={formatted_location}&bedrooms={bedrooms_param}&minSize={min_size_param}&maxSize={max_size_param}&propertyTypeGroup={pro_type}"
+            f"https://www.propertyguru.com.sg/property-for-sale?listingType=sale&page=1&isCommercial=false&maxPrice={max_price}&freetext={quote(formatted_location)}&bedrooms={bedrooms_param}&minSize={min_size_param}&maxSize={max_size_param}&propertyTypeGroup={pro_type}"
           #  f" https://www.propertyguru.com.sg/property-for-sale?listingType=sale&page=1&isCommercial=true&_freetextDisplay={formatted_location}&priceMax={max_price * 10000000}",
            # f"https://www.99.co/singapore/sale",
            # f"https://housing.com/in/buy/{formatted_location}/{formatted_location}",
@@ -113,8 +114,8 @@ class PropertyFindingAgent:
         - Include complete property details with exact location
         - IMPORTANT: Return data for at least 3 different properties. MAXIMUM 10.
         - Format as a list of properties with their respective details
-        - include the hyperlink to the each property in the resulted data
-        - extract the image link of each property
+        - IMPORTANT: include the hyperlink to the each property in the resulted data
+        - IMPORTANT: extract the image link of each property
         """
         
         if min_size:
@@ -142,53 +143,113 @@ class PropertyFindingAgent:
         print("Processed Properties:", properties)
 
         
-        analysis = self.agent.run(
-            f"""As a real estate expert, analyze these properties and market trends:
+        if len(properties) == 0:
+            return "No properties found. Please try again with different search criteria."
+        else:
+            analysis = self.agent.run(
+                f"""As a real estate expert, analyze these properties and market trends:
 
-            Properties Found in json format:
-            {properties}
+                Properties Found in json format:
+                {properties}
 
-            **IMPORTANT INSTRUCTIONS:**
-            1. ONLY analyze properties from the above JSON data that match the user's requirements:
-               - Property Category: {property_category}
-               - Property Type: {property_type}
-               - Maximum Price: {max_price} SGD
-            2. DO NOT create new categories or property types
-            3. From the matching properties, select 5-6 properties with prices closest to {max_price} SGD
+                **IMPORTANT INSTRUCTIONS:**
+                1. ONLY analyze properties from the above JSON data that match the user's requirements:
+                - Property Category: {property_category}
+                - Property Type: {property_type}
+                - Maximum Price: {max_price} SGD
+                2. DO NOT create new categories or property types
+                3. From the matching properties, select 5-6 properties with prices closest to {max_price} SGD
 
-            Please provide your analysis in this format:
-            
-            🏠 SELECTED PROPERTIES
-            • List only 5-6 best matching properties with prices closest to {max_price} SGD
-            • For each property include:
-              - Name and Location
-              - Price (with value analysis)
-              - Key Features
-              - Pros and Cons
-              - hyperlink to the property listing
+                Please provide your analysis in this format:
+                
+                🏠 SELECTED PROPERTIES
+                • List with number only 5-6 best matching properties with prices closest to {max_price} SGD
+                • For each property include:
+                - Name and Location
+                - Price (with value analysis)
+                - Key Features
+                - Pros and Cons
+                - hyperlink to the property listing
 
-            💰 BEST VALUE ANALYSIS
-            • Compare the selected properties based on:
-              - Price per sq ft
-              - Location advantage
-              - Amenities offered
+                💰 BEST VALUE ANALYSIS
+                • Compare the selected properties based on:
+                - Price per sq ft
+                - Location advantage
+                - Amenities offered
 
-            📍 LOCATION INSIGHTS
-            • Specific advantages of the areas where selected properties are located
+                📍 LOCATION INSIGHTS
+                • Specific advantages of the areas where selected properties are located
 
-            💡 RECOMMENDATIONS
-            • Top 3 properties from the selection with reasoning
-            • Investment potential
-            • Points to consider before purchase
+                💡 RECOMMENDATIONS
+                • Top 3 properties from the selection with reasoning
+                • Investment potential
+                • Points to consider before purchase
 
-            🤝 NEGOTIATION TIPS
-            • Property-specific negotiation strategies
+                🤝 NEGOTIATION TIPS
+                • Property-specific negotiation strategies
 
-            Format your response in a clear, structured way using the above sections.
-            """
-        )
+                Format your response in a clear, structured way using the above sections.
+                """
+            )
         
         return analysis.content
+    
+
+    def get_location_trends(self, city: str) -> str:
+        """Get price trends for different localities in the city"""
+        raw_response = self.firecrawl.extract([
+            f"https://www.99acres.com/property-rates-and-price-trends-in-{city.lower()}-prffid/*"
+        ], {
+            'prompt': """Extract price trends data for ALL major localities in the city. 
+            IMPORTANT: 
+            - Return data for at least 5-10 different localities
+            - Include both premium and affordable areas
+            - Do not skip any locality mentioned in the source
+            - Format as a list of locations with their respective data
+            """,
+            'schema': LocationsResponse.model_json_schema(),
+        })
+        
+        if isinstance(raw_response, dict) and raw_response.get('success'):
+            locations = raw_response['data'].get('locations', [])
+    
+            analysis = self.agent.run(
+                f"""As a real estate expert, analyze these location price trends for {city}:
+
+                {locations}
+
+                Please provide:
+                1. A bullet-point summary of the price trends for each location
+                2. Identify the top 3 locations with:
+                   - Highest price appreciation
+                   - Best rental yields
+                   - Best value for money
+                3. Investment recommendations:
+                   - Best locations for long-term investment
+                   - Best locations for rental income
+                   - Areas showing emerging potential
+                4. Specific advice for investors based on these trends
+
+                Format the response as follows:
+                
+                📊 LOCATION TRENDS SUMMARY
+                • [Bullet points for each location]
+
+                🏆 TOP PERFORMING AREAS
+                • [Bullet points for best areas]
+
+                💡 INVESTMENT INSIGHTS
+                • [Bullet points with investment advice]
+
+                🎯 RECOMMENDATIONS
+                • [Bullet points with specific recommendations]
+                """
+            )
+            
+            return analysis.content
+            
+        return "No price trends data available"
+
 
 def main():
     st.set_page_config(
@@ -343,13 +404,13 @@ def main():
                 
                 st.divider()
                 
-                with st.spinner("📊 Analyzing location trends..."):
-                    location_trends = st.session_state.property_agent.get_location_trends(city)
+                # with st.spinner("📊 Analyzing location trends..."):
+                #     location_trends = st.session_state.property_agent.get_location_trends(city)
                     
-                    st.success("✅ Location analysis completed!")
+                #     st.success("✅ Location analysis completed!")
                     
-                    with st.expander("📈 Location Trends Analysis of the city"):
-                        st.markdown(location_trends)
+                #     with st.expander("📈 Location Trends Analysis of the city"):
+                #         st.markdown(location_trends)
                 
         except Exception as e:
             st.error(f"❌ An error occurred: {str(e)}")
